@@ -40,6 +40,40 @@ const getInitialStudent = (): StudentProfile => {
   return DEFAULT_DEMO_STUDENT;
 };
 
+/**
+ * Environment-aware OAuth Redirect URL resolver:
+ * - Production: strictly 'https://edustack-2-0.vercel.app' (or configured production domain)
+ * - Local Development: 'http://localhost:5173' (or current development port)
+ * - Never returns localhost when running in production.
+ */
+export const getAuthRedirectUrl = (): string => {
+  // 1. Check explicit environment override
+  const envOverride = import.meta.env.VITE_AUTH_REDIRECT_URL || import.meta.env.VITE_APP_URL;
+  if (envOverride && !envOverride.includes('localhost') && !envOverride.includes('127.0.0.1')) {
+    return envOverride.replace(/\/+$/, '');
+  }
+
+  // 2. Check current browser window location
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return origin;
+    }
+  }
+
+  // 3. If built in production mode (import.meta.env.PROD), ALWAYS default to the production Vercel URL
+  if (import.meta.env.PROD) {
+    return 'https://edustack-2-0.vercel.app';
+  }
+
+  // 4. Local development mode
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return 'http://localhost:5173';
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -50,26 +84,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
-      // 1. Check existing session on load / refresh / browser reopen
+      const search = window.location.search;
+      const hash = window.location.hash;
+      const hasCode = search.includes('code=');
+      const hasAccessToken = hash.includes('access_token=');
+      const hasError = search.includes('error=') || hash.includes('error=');
+
+      // Check if OAuth callback returned an error from Google/Supabase
+      if (hasError) {
+        const params = new URLSearchParams(search);
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+        const errDesc = params.get('error_description') || hashParams.get('error_description');
+        const errCode = params.get('error') || hashParams.get('error');
+        console.error('[Auth] OAuth error returned in callback URL:', errCode, errDesc);
+        alert(`Google Authentication Notice: ${errDesc || errCode || 'Sign-in was cancelled or encountered an error.'}`);
+      }
+
+      // If returning with authorization code, explicitly trigger exchange
+      if (hasCode) {
+        const params = new URLSearchParams(search);
+        const code = params.get('code');
+        if (code) {
+          supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
+            if (!error && data?.session?.user) {
+              mapSupabaseUserToStudent(data.session.user);
+              if (window.history && window.history.replaceState) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }
+            } else if (error) {
+              console.warn('[Auth] Code exchange error:', error.message);
+            }
+          }).catch((err) => {
+            console.warn('[Auth] Code exchange exception:', err);
+          });
+        }
+      }
+
+      // Check existing session
       supabase.auth.getSession().then(({ data: { session }, error }) => {
         if (!error && session?.user) {
           mapSupabaseUserToStudent(session.user);
-        } else {
+        } else if (!hasCode && !hasAccessToken) {
           setUser(null);
           setIsGoogleAuthenticated(false);
           setStudent(getInitialStudent());
           setIsLoading(false);
         }
       }).catch((err) => {
-        console.warn('Supabase getSession error, using local student profile:', err);
-        setUser(null);
-        setIsGoogleAuthenticated(false);
-        setStudent(getInitialStudent());
-        setIsLoading(false);
+        console.warn('[Auth] Supabase getSession warning, using local profile:', err);
+        if (!hasCode && !hasAccessToken) {
+          setUser(null);
+          setIsGoogleAuthenticated(false);
+          setStudent(getInitialStudent());
+          setIsLoading(false);
+        }
       });
 
-      // 2. Listen for OAuth state changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
+      // Listen for all OAuth state changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log('[Auth] Auth state change event:', event);
         if (session?.user) {
           await mapSupabaseUserToStudent(session.user);
         } else if (event === 'SIGNED_OUT') {
@@ -78,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setStudent(DEFAULT_DEMO_STUDENT);
           localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
           setIsLoading(false);
-        } else {
+        } else if (!hasCode && !hasAccessToken) {
           setUser(null);
           setIsGoogleAuthenticated(false);
           setStudent(getInitialStudent());
@@ -122,7 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           { onConflict: 'id' }
         );
       } catch (err) {
-        console.warn('Supabase profile upsert warning:', err);
+        console.warn('[Auth] Supabase profile upsert warning:', err);
       }
     }
 
@@ -133,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         u.id
       );
     } catch (err) {
-      console.warn('Guest attempt linking notice:', err);
+      console.warn('[Auth] Guest attempt linking notice:', err);
     }
 
     setStudent(profile);
@@ -144,10 +217,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = async () => {
     try {
       if (isSupabaseConfigured && supabase) {
+        const redirectUrl = getAuthRedirectUrl();
+        console.log('[Auth] Initiating Google OAuth with redirect destination:', redirectUrl);
+
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: window.location.origin,
+            redirectTo: redirectUrl,
             queryParams: {
               access_type: 'offline',
               prompt: 'consent',
@@ -156,14 +232,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          console.error('Google sign-in error:', error);
-          alert('Google Sign-In Notice: ' + error.message + '\n\nPlease ensure Google Provider is enabled in Supabase Authentication -> Providers -> Google.');
+          console.error('[Auth] Google sign-in error:', error);
+          alert(
+            'Google Sign-In Notice: ' + error.message + 
+            '\n\nPlease verify in Supabase Dashboard -> Authentication -> URL Configuration that "' +
+            redirectUrl + '" is set as the Site URL or added to the Redirect URLs list.'
+          );
         }
       } else {
         alert('Supabase is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
       }
     } catch (err: any) {
-      console.error('Sign-in error:', err);
+      console.error('[Auth] Sign-in exception:', err);
       alert('Sign-In Error: ' + (err?.message || 'Failed to initiate Google sign in.'));
     }
   };
@@ -174,7 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await supabase.auth.signOut();
       } catch (err) {
-        console.warn('Sign out warning:', err);
+        console.warn('[Auth] Sign out warning:', err);
       }
     }
     setUser(null);
@@ -205,7 +285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           { onConflict: 'id' }
         );
       } catch (err) {
-        console.warn('Could not sync profile to Supabase:', err);
+        console.warn('[Auth] Could not sync profile to Supabase:', err);
       }
     }
   };

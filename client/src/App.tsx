@@ -13,6 +13,7 @@ import { MockAnalysisView } from './features/analysis/MockAnalysisView';
 import { SmartErrorNotesView } from './features/error-notes/SmartErrorNotesView';
 import { ErrorCorrectTestEngine } from './features/error-retest/ErrorCorrectTestEngine';
 import { ErrorNotesPdfGenerator } from './features/pdf/ErrorNotesPdfGenerator';
+import { AuthCallback } from './features/auth/AuthCallback';
 import { storageAdapter } from './services/storageAdapter';
 import { getTestById } from './data/testRegistry';
 
@@ -88,6 +89,9 @@ export const App: React.FC = () => {
 
               {/* 7. Error Notes PDF Generator */}
               <Route path="/pdf/:attemptId" element={<ErrorNotesPdfGenerator />} />
+
+              {/* 8. Supabase Google OAuth Callback */}
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
