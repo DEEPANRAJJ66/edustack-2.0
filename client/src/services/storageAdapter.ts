@@ -183,43 +183,47 @@ export const storageAdapter = {
 
         if (!error && data) {
           const row = Array.isArray(data) ? data[0] : data;
-          const attemptId = row.attempt_id;
-          const attemptNumber = row.attempt_number;
-          const startedAt = row.started_at;
+          if (row && row.attempt_id) {
+            const attemptId = row.attempt_id;
+            const attemptNumber = row.attempt_number;
+            const startedAt = row.started_at;
 
-          const created: Attempt = {
-            id: attemptId,
-            studentId,
-            testId,
-            attemptNumber,
-            status: 'IN_PROGRESS',
-            startedAt,
-            durationMinutes,
-            totalTimeSeconds: 0,
-            score: 0,
-            accuracy: 0,
-            physicsScore: 0,
-            chemistryScore: 0,
-            mathScore: 0,
-            correctCount: 0,
-            wrongCount: 0,
-            unattemptedCount: 0,
-            isErrorCorrectTest,
-            parentAttemptId,
-            createdAt: startedAt,
-            updatedAt: startedAt,
-          };
+            const created: Attempt = {
+              id: attemptId,
+              studentId,
+              testId,
+              attemptNumber,
+              status: 'IN_PROGRESS',
+              startedAt,
+              durationMinutes,
+              totalTimeSeconds: 0,
+              score: 0,
+              accuracy: 0,
+              physicsScore: 0,
+              chemistryScore: 0,
+              mathScore: 0,
+              correctCount: 0,
+              wrongCount: 0,
+              unattemptedCount: 0,
+              isErrorCorrectTest,
+              parentAttemptId,
+              createdAt: startedAt,
+              updatedAt: startedAt,
+            };
 
-          // Also save in local cache for offline/instant access
-          const all = getDemoAttempts();
-          all.push(created);
-          saveDemoAttempts(all);
-          return created;
+            // Also save in local cache for offline/instant access
+            const all = getDemoAttempts();
+            all.push(created);
+            saveDemoAttempts(all);
+            return created;
+          }
         }
 
-        console.warn('Supabase create_next_attempt RPC notice:', error);
-      } catch (err) {
-        console.warn('Supabase create_next_attempt exception:', err);
+        if (error) {
+          console.warn('Supabase create_next_attempt RPC notice:', error.message || error);
+        }
+      } catch (err: any) {
+        console.warn('Supabase create_next_attempt exception:', err?.message || err);
       }
     }
 
