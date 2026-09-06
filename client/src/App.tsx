@@ -24,7 +24,7 @@ const TestStartRedirect: React.FC = () => {
   const [targetUrl, setTargetUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (!testId || !student) return;
+    if (!testId) return;
     const test = getTestById(testId);
     if (!test) {
       setTargetUrl('/');
@@ -32,8 +32,10 @@ const TestStartRedirect: React.FC = () => {
       return;
     }
 
+    const currentStudentId = student?.id || '00000000-0000-0000-0000-000000000001';
+
     storageAdapter
-      .createNextAttempt(student.id, test.id, test.durationMinutes)
+      .createNextAttempt(currentStudentId, test.id, test.durationMinutes)
       .then((att) => {
         setTargetUrl(`/test/${test.id}/attempt/${att.id}`);
         setRedirecting(false);
@@ -59,7 +61,7 @@ const TestStartRedirect: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="min-h-screen flex flex-col bg-slate-100">
           <DemoModeBanner />
           <AppNavbar />

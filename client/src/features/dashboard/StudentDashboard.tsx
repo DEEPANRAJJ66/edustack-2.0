@@ -45,16 +45,21 @@ export const StudentDashboard: React.FC = () => {
   // Selected attempt per attended test: { testId: attemptId }
   const [selectedAttemptByTest, setSelectedAttemptByTest] = useState<Record<string, string>>({});
 
+  const activeStudent = student || {
+    id: '00000000-0000-0000-0000-000000000001',
+    name: 'Arjun Sharma',
+    email: 'arjun.sharma@edustack.app',
+  };
+
   useEffect(() => {
-    if (!student) return;
     loadAttempts();
   }, [student]);
 
   const loadAttempts = async () => {
-    if (!student) return;
+    const currentStudent = student || activeStudent;
     setLoading(true);
     try {
-      const data = await storageAdapter.getAttempts(student.id);
+      const data = await storageAdapter.getAttempts(currentStudent.id);
       setAttempts(data);
 
       // Auto-select latest attempt for attended tests
@@ -88,10 +93,11 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const handleStartNewTest = async (test: TestRegistryItem) => {
-    if (!student) return;
+    const currentStudent = student || activeStudent;
     try {
+      setLoading(true);
       const newAttempt = await storageAdapter.createNextAttempt(
-        student.id,
+        currentStudent.id,
         test.id,
         test.durationMinutes
       );
@@ -99,12 +105,14 @@ export const StudentDashboard: React.FC = () => {
     } catch (err) {
       console.error('Failed to start test:', err);
       alert('Error starting test. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleRetakeTest = async (testId: string) => {
     const test = ALL_TESTS.find((t) => t.id === testId);
-    if (!test || !student) return;
+    if (!test) return;
 
     if (confirm(`Start a new independent attempt for ${test.title}? Previous attempts will remain untouched.`)) {
       await handleStartNewTest(test);

@@ -47,8 +47,10 @@ export const ErrorCorrectTestEngine: React.FC = () => {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
 
+  const activeStudentId = student?.id || '00000000-0000-0000-0000-000000000001';
+
   useEffect(() => {
-    if (!parentAttemptId || !student) return;
+    if (!parentAttemptId) return;
 
     const setupRetest = async () => {
       setLoading(true);
@@ -99,7 +101,7 @@ export const ErrorCorrectTestEngine: React.FC = () => {
 
         // Create an independent retest attempt record
         const newRetestAttempt = await storageAdapter.createNextAttempt(
-          student.id,
+          activeStudentId,
           originalTest.id,
           durationMins,
           true, // is_error_correct_test

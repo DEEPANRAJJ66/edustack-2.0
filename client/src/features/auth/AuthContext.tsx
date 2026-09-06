@@ -29,22 +29,34 @@ const DEFAULT_DEMO_STUDENT: StudentProfile = {
   avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
 };
 
+const getInitialStudent = (): StudentProfile => {
+  try {
+    const saved = localStorage.getItem('edustack_demo_active_student');
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return DEFAULT_DEMO_STUDENT;
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [student, setStudent] = useState<StudentProfile | null>(null);
+  const [student, setStudent] = useState<StudentProfile | null>(getInitialStudent());
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
       // Check current session
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) {
+      supabase.auth.getSession().then(({ data: { session }, error }) => {
+        if (!error && session?.user) {
           mapSupabaseUserToStudent(session.user);
         } else {
-          setStudent(null);
+          setStudent(getInitialStudent());
           setIsLoading(false);
         }
+      }).catch((err) => {
+        console.warn('Supabase getSession error, using local student profile:', err);
+        setStudent(getInitialStudent());
+        setIsLoading(false);
       });
 
       // Listen for auth state changes
@@ -52,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (session?.user) {
           mapSupabaseUserToStudent(session.user);
         } else {
-          setStudent(null);
+          setStudent(getInitialStudent());
           setIsLoading(false);
         }
       });
@@ -61,18 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         subscription.unsubscribe();
       };
     } else {
-      // Dev/Demo fallback: check saved demo student or set default
-      const saved = localStorage.getItem('edustack_demo_active_student');
-      if (saved) {
-        try {
-          setStudent(JSON.parse(saved));
-        } catch {
-          setStudent(DEFAULT_DEMO_STUDENT);
-        }
-      } else {
-        setStudent(DEFAULT_DEMO_STUDENT);
-        localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
-      }
+      setStudent(getInitialStudent());
       setIsLoading(false);
     }
   }, []);
@@ -82,55 +83,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: user.id,
       name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
       email: user.email || '',
-      avatarUrl: user.user_metadata?.avatar_url,
+      avatarUrl: user.user_metadata?.avatar_url || DEFAULT_DEMO_STUDENT.avatarUrl,
     };
 
     // Ensure profile row exists in profiles table
     if (supabase) {
-      await supabase.from('profiles').upsert(
-        {
-          id: user.id,
-          name: profile.name,
-          email: profile.email,
-          avatar_url: profile.avatarUrl,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      try {
+        await supabase.from('profiles').upsert(
+          {
+            id: user.id,
+            name: profile.name,
+            email: profile.email,
+            avatar_url: profile.avatarUrl,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      } catch (err) {
+        console.warn('Supabase profile upsert warning:', err);
+      }
     }
 
     setStudent(profile);
+    localStorage.setItem('edustack_demo_active_student', JSON.stringify(profile));
     setIsLoading(false);
   };
 
   const signInWithGoogle = async () => {
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
-    } else {
-      // Demo fallback: switch or activate demo student
-      setStudent(DEFAULT_DEMO_STUDENT);
-      localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin,
+          },
+        });
+        if (error) {
+          console.warn('Google sign-in warning:', error.message);
+          alert('Google Sign-In note: ' + error.message + '\nContinuing with active student: ' + (student?.name || 'Arjun Sharma'));
+        }
+      } else {
+        const def = getInitialStudent();
+        setStudent(def);
+        localStorage.setItem('edustack_demo_active_student', JSON.stringify(def));
+      }
+    } catch (err: any) {
+      console.warn('Sign-in notice:', err);
+      alert('Sign-in note: Continuing with current student profile (' + (student?.name || 'Arjun Sharma') + ')');
     }
   };
 
   const signOut = async () => {
     if (isSupabaseConfigured && supabase) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('Sign out warning:', err);
+      }
     }
-    setStudent(null);
-    localStorage.removeItem('edustack_demo_active_student');
+    setStudent(DEFAULT_DEMO_STUDENT);
+    localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
   };
 
-  const switchStudentProfile = (id: string, name: string, email: string) => {
+  const switchStudentProfile = async (id: string, name: string, email: string) => {
     const updated = { id, name, email, avatarUrl: DEFAULT_DEMO_STUDENT.avatarUrl };
     setStudent(updated);
     localStorage.setItem('edustack_demo_active_student', JSON.stringify(updated));
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('profiles').upsert(
+          {
+            id,
+            name,
+            email,
+            avatar_url: updated.avatarUrl,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      } catch (err) {
+        console.warn('Could not sync profile to Supabase:', err);
+      }
+    }
   };
 
   return (

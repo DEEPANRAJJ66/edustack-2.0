@@ -66,44 +66,46 @@ export const storageAdapter = {
    */
   async getAttempts(studentId: string, testId?: string): Promise<Attempt[]> {
     if (isSupabaseConfigured && supabase) {
-      let query = supabase
-        .from('attempts')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('attempt_number', { ascending: true });
+      try {
+        let query = supabase
+          .from('attempts')
+          .select('*')
+          .eq('student_id', studentId)
+          .order('attempt_number', { ascending: true });
 
-      if (testId) {
-        query = query.eq('test_id', testId);
-      }
+        if (testId) {
+          query = query.eq('test_id', testId);
+        }
 
-      const { data, error } = await query;
-      if (error) {
-        console.error('Supabase fetch attempts error:', error);
-        throw error;
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          return data.map((row) => ({
+            id: row.id,
+            studentId: row.student_id,
+            testId: row.test_id,
+            attemptNumber: row.attempt_number,
+            status: row.status,
+            startedAt: row.started_at,
+            submittedAt: row.submitted_at,
+            durationMinutes: row.duration_minutes,
+            totalTimeSeconds: row.total_time_seconds,
+            score: Number(row.score),
+            accuracy: Number(row.accuracy),
+            physicsScore: Number(row.physics_score),
+            chemistryScore: Number(row.chemistry_score),
+            mathScore: Number(row.math_score),
+            correctCount: row.correct_count,
+            wrongCount: row.wrong_count,
+            unattemptedCount: row.unattempted_count,
+            isErrorCorrectTest: row.is_error_correct_test,
+            parentAttemptId: row.parent_attempt_id,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          }));
+        }
+      } catch (err) {
+        console.warn('Supabase fetch attempts warning:', err);
       }
-      return (data || []).map((row) => ({
-        id: row.id,
-        studentId: row.student_id,
-        testId: row.test_id,
-        attemptNumber: row.attempt_number,
-        status: row.status,
-        startedAt: row.started_at,
-        submittedAt: row.submitted_at,
-        durationMinutes: row.duration_minutes,
-        totalTimeSeconds: row.total_time_seconds,
-        score: Number(row.score),
-        accuracy: Number(row.accuracy),
-        physicsScore: Number(row.physics_score),
-        chemistryScore: Number(row.chemistry_score),
-        mathScore: Number(row.math_score),
-        correctCount: row.correct_count,
-        wrongCount: row.wrong_count,
-        unattemptedCount: row.unattempted_count,
-        isErrorCorrectTest: row.is_error_correct_test,
-        parentAttemptId: row.parent_attempt_id,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
     }
 
     // Dev/Demo fallback
@@ -116,37 +118,41 @@ export const storageAdapter = {
    */
   async getAttemptById(attemptId: string): Promise<Attempt | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('attempts')
-        .select('*')
-        .eq('id', attemptId)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('attempts')
+          .select('*')
+          .eq('id', attemptId)
+          .single();
 
-      if (error || !data) return null;
-
-      return {
-        id: data.id,
-        studentId: data.student_id,
-        testId: data.test_id,
-        attemptNumber: data.attempt_number,
-        status: data.status,
-        startedAt: data.started_at,
-        submittedAt: data.submitted_at,
-        durationMinutes: data.duration_minutes,
-        totalTimeSeconds: data.total_time_seconds,
-        score: Number(data.score),
-        accuracy: Number(data.accuracy),
-        physicsScore: Number(data.physics_score),
-        chemistryScore: Number(data.chemistry_score),
-        mathScore: Number(data.math_score),
-        correctCount: data.correct_count,
-        wrongCount: data.wrong_count,
-        unattemptedCount: data.unattempted_count,
-        isErrorCorrectTest: data.is_error_correct_test,
-        parentAttemptId: data.parent_attempt_id,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
+        if (!error && data) {
+          return {
+            id: data.id,
+            studentId: data.student_id,
+            testId: data.test_id,
+            attemptNumber: data.attempt_number,
+            status: data.status,
+            startedAt: data.started_at,
+            submittedAt: data.submitted_at,
+            durationMinutes: data.duration_minutes,
+            totalTimeSeconds: data.total_time_seconds,
+            score: Number(data.score),
+            accuracy: Number(data.accuracy),
+            physicsScore: Number(data.physics_score),
+            chemistryScore: Number(data.chemistry_score),
+            mathScore: Number(data.math_score),
+            correctCount: data.correct_count,
+            wrongCount: data.wrong_count,
+            unattemptedCount: data.unattempted_count,
+            isErrorCorrectTest: data.is_error_correct_test,
+            parentAttemptId: data.parent_attempt_id,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+          };
+        }
+      } catch (err) {
+        console.warn('Supabase getAttemptById warning:', err);
+      }
     }
 
     const all = getDemoAttempts();
@@ -165,47 +171,56 @@ export const storageAdapter = {
     parentAttemptId: string | null = null
   ): Promise<Attempt> {
     if (isSupabaseConfigured && supabase) {
-      // Call atomic PostgreSQL function create_next_attempt
-      const { data, error } = await supabase.rpc('create_next_attempt', {
-        p_student_id: studentId,
-        p_test_id: testId,
-        p_duration_minutes: durationMinutes,
-        p_is_error_correct_test: isErrorCorrectTest,
-        p_parent_attempt_id: parentAttemptId,
-      });
+      try {
+        // Call atomic PostgreSQL function create_next_attempt
+        const { data, error } = await supabase.rpc('create_next_attempt', {
+          p_student_id: studentId,
+          p_test_id: testId,
+          p_duration_minutes: durationMinutes,
+          p_is_error_correct_test: isErrorCorrectTest,
+          p_parent_attempt_id: parentAttemptId,
+        });
 
-      if (error) {
-        console.error('Supabase create_next_attempt RPC error:', error);
-        throw error;
+        if (!error && data) {
+          const row = Array.isArray(data) ? data[0] : data;
+          const attemptId = row.attempt_id;
+          const attemptNumber = row.attempt_number;
+          const startedAt = row.started_at;
+
+          const created: Attempt = {
+            id: attemptId,
+            studentId,
+            testId,
+            attemptNumber,
+            status: 'IN_PROGRESS',
+            startedAt,
+            durationMinutes,
+            totalTimeSeconds: 0,
+            score: 0,
+            accuracy: 0,
+            physicsScore: 0,
+            chemistryScore: 0,
+            mathScore: 0,
+            correctCount: 0,
+            wrongCount: 0,
+            unattemptedCount: 0,
+            isErrorCorrectTest,
+            parentAttemptId,
+            createdAt: startedAt,
+            updatedAt: startedAt,
+          };
+
+          // Also save in local cache for offline/instant access
+          const all = getDemoAttempts();
+          all.push(created);
+          saveDemoAttempts(all);
+          return created;
+        }
+
+        console.warn('Supabase create_next_attempt RPC notice:', error);
+      } catch (err) {
+        console.warn('Supabase create_next_attempt exception:', err);
       }
-
-      const row = Array.isArray(data) ? data[0] : data;
-      const attemptId = row.attempt_id;
-      const attemptNumber = row.attempt_number;
-      const startedAt = row.started_at;
-
-      return {
-        id: attemptId,
-        studentId,
-        testId,
-        attemptNumber,
-        status: 'IN_PROGRESS',
-        startedAt,
-        durationMinutes,
-        totalTimeSeconds: 0,
-        score: 0,
-        accuracy: 0,
-        physicsScore: 0,
-        chemistryScore: 0,
-        mathScore: 0,
-        correctCount: 0,
-        wrongCount: 0,
-        unattemptedCount: 0,
-        isErrorCorrectTest,
-        parentAttemptId,
-        createdAt: startedAt,
-        updatedAt: startedAt,
-      };
     }
 
     // Dev/Demo fallback: atomic sequential calculation
@@ -214,7 +229,7 @@ export const storageAdapter = {
     const nextNumber = existingForTest.reduce((max, a) => Math.max(max, a.attemptNumber), 0) + 1;
 
     const newAttempt: Attempt = {
-      id: 'demo-att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      id: 'att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       studentId,
       testId,
       attemptNumber: nextNumber,
@@ -245,33 +260,31 @@ export const storageAdapter = {
    * Save / Upsert single question response with debouncing
    */
   async upsertResponse(response: QuestionResponse): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('responses').upsert(
-        {
-          attempt_id: response.attemptId,
-          question_id: response.questionId,
-          selected_option: response.selectedOption || null,
-          numerical_value: response.numericalValue || null,
-          marked_for_review: response.markedForReview,
-          visited: response.visited,
-          time_spent_seconds: response.timeSpentSeconds,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'attempt_id,question_id' }
-      );
-
-      if (error) {
-        console.error('Supabase upsert response error:', error);
-        throw error;
-      }
-      return;
-    }
-
-    // Dev/Demo fallback
+    // Always update local cache first
     const all = getDemoResponses();
     const key = `${response.attemptId}_${response.questionId}`;
     all[key] = { ...response, updatedAt: new Date().toISOString() };
     saveDemoResponses(all);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('responses').upsert(
+          {
+            attempt_id: response.attemptId,
+            question_id: response.questionId,
+            selected_option: response.selectedOption || null,
+            numerical_value: response.numericalValue || null,
+            marked_for_review: response.markedForReview,
+            visited: response.visited,
+            time_spent_seconds: response.timeSpentSeconds,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'attempt_id,question_id' }
+        );
+      } catch (err) {
+        console.warn('Supabase upsert response warning:', err);
+      }
+    }
   },
 
   /**
@@ -279,39 +292,40 @@ export const storageAdapter = {
    */
   async getAttemptResponses(attemptId: string): Promise<Record<string, QuestionResponse>> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('responses')
-        .select('*')
-        .eq('attempt_id', attemptId);
+      try {
+        const { data, error } = await supabase
+          .from('responses')
+          .select('*')
+          .eq('attempt_id', attemptId);
 
-      if (error) {
-        console.error('Supabase fetch responses error:', error);
-        throw error;
+        if (!error && data && data.length > 0) {
+          const map: Record<string, QuestionResponse> = {};
+          for (const r of data) {
+            map[r.question_id] = {
+              id: r.id,
+              attemptId: r.attempt_id,
+              questionId: r.question_id,
+              selectedOption: r.selected_option,
+              numericalValue: r.numerical_value,
+              markedForReview: r.marked_for_review,
+              visited: r.visited,
+              timeSpentSeconds: r.time_spent_seconds,
+              isCorrect: r.is_correct,
+              marksAwarded: r.marks_awarded,
+              updatedAt: r.updated_at,
+            };
+          }
+          return map;
+        }
+      } catch (err) {
+        console.warn('Supabase fetch responses warning:', err);
       }
-
-      const map: Record<string, QuestionResponse> = {};
-      for (const r of data || []) {
-        map[r.question_id] = {
-          id: r.id,
-          attemptId: r.attempt_id,
-          questionId: r.question_id,
-          selectedOption: r.selected_option,
-          numericalValue: r.numerical_value,
-          markedForReview: r.marked_for_review,
-          visited: r.visited,
-          timeSpentSeconds: r.time_spent_seconds,
-          isCorrect: r.is_correct,
-          marksAwarded: r.marks_awarded,
-          updatedAt: r.updated_at,
-        };
-      }
-      return map;
     }
 
     // Dev/Demo fallback
     const all = getDemoResponses();
     const map: Record<string, QuestionResponse> = {};
-    for (const [key, resp] of Object.entries(all)) {
+    for (const [, resp] of Object.entries(all)) {
       if (resp.attemptId === attemptId) {
         map[resp.questionId] = resp;
       }
@@ -334,78 +348,9 @@ export const storageAdapter = {
     const evalResult = evaluateTestAttempt(test.questions, rawResponses);
     const submittedAt = new Date().toISOString();
 
-    if (isSupabaseConfigured && supabase) {
-      // 1. Update all responses with evaluated correctness and marks
-      for (const evaluated of Object.values(evalResult.evaluatedResponses)) {
-        await supabase
-          .from('responses')
-          .update({
-            is_correct: evaluated.isCorrect,
-            marks_awarded: evaluated.marksAwarded,
-            time_spent_seconds: evaluated.timeSpentSeconds,
-            updated_at: submittedAt,
-          })
-          .eq('attempt_id', attemptId)
-          .eq('question_id', evaluated.questionId);
-      }
-
-      // 2. Update attempt status and final scores
-      const { data, error } = await supabase
-        .from('attempts')
-        .update({
-          status: 'COMPLETED',
-          submitted_at: submittedAt,
-          total_time_seconds: evalResult.totalTimeSeconds,
-          score: evalResult.score,
-          accuracy: evalResult.accuracy,
-          physics_score: evalResult.physicsScore,
-          chemistry_score: evalResult.chemistryScore,
-          math_score: evalResult.mathScore,
-          correct_count: evalResult.correctCount,
-          wrong_count: evalResult.wrongCount,
-          unattempted_count: evalResult.unattemptedCount,
-          updated_at: submittedAt,
-        })
-        .eq('id', attemptId)
-        .select()
-        .single();
-
-      if (error || !data) {
-        console.error('Supabase submit attempt error:', error);
-        throw error;
-      }
-
-      return {
-        id: data.id,
-        studentId: data.student_id,
-        testId: data.test_id,
-        attemptNumber: data.attempt_number,
-        status: data.status,
-        startedAt: data.started_at,
-        submittedAt: data.submitted_at,
-        durationMinutes: data.duration_minutes,
-        totalTimeSeconds: data.total_time_seconds,
-        score: Number(data.score),
-        accuracy: Number(data.accuracy),
-        physicsScore: Number(data.physics_score),
-        chemistryScore: Number(data.chemistry_score),
-        mathScore: Number(data.math_score),
-        correctCount: data.correct_count,
-        wrongCount: data.wrong_count,
-        unattemptedCount: data.unattempted_count,
-        isErrorCorrectTest: data.is_error_correct_test,
-        parentAttemptId: data.parent_attempt_id,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
-    }
-
-    // Dev/Demo fallback
+    // 1. Update local cache
     const all = getDemoAttempts();
     const idx = all.findIndex((a) => a.id === attemptId);
-    if (idx === -1) throw new Error('Attempt not found in local store');
-
-    // Update demo responses with evaluation
     const demoResponses = getDemoResponses();
     for (const evaluated of Object.values(evalResult.evaluatedResponses)) {
       const key = `${attemptId}_${evaluated.questionId}`;
@@ -413,7 +358,7 @@ export const storageAdapter = {
     }
     saveDemoResponses(demoResponses);
 
-    const updatedAttempt: Attempt = {
+    const localUpdatedAttempt: Attempt = idx >= 0 ? {
       ...all[idx],
       status: 'COMPLETED',
       submittedAt,
@@ -427,11 +372,106 @@ export const storageAdapter = {
       wrongCount: evalResult.wrongCount,
       unattemptedCount: evalResult.unattemptedCount,
       updatedAt: submittedAt,
+    } : {
+      id: attemptId,
+      studentId: '00000000-0000-0000-0000-000000000001',
+      testId,
+      attemptNumber: 1,
+      status: 'COMPLETED',
+      startedAt: submittedAt,
+      submittedAt,
+      durationMinutes: test.durationMinutes,
+      totalTimeSeconds: evalResult.totalTimeSeconds,
+      score: evalResult.score,
+      accuracy: evalResult.accuracy,
+      physicsScore: evalResult.physicsScore,
+      chemistryScore: evalResult.chemistryScore,
+      mathScore: evalResult.mathScore,
+      correctCount: evalResult.correctCount,
+      wrongCount: evalResult.wrongCount,
+      unattemptedCount: evalResult.unattemptedCount,
+      isErrorCorrectTest: false,
+      parentAttemptId: null,
+      createdAt: submittedAt,
+      updatedAt: submittedAt,
     };
 
-    all[idx] = updatedAttempt;
+    if (idx >= 0) {
+      all[idx] = localUpdatedAttempt;
+    } else {
+      all.push(localUpdatedAttempt);
+    }
     saveDemoAttempts(all);
-    return updatedAttempt;
+
+    // 2. Sync with Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await Promise.all(
+          Object.values(evalResult.evaluatedResponses).map((evaluated) =>
+            supabase
+              .from('responses')
+              .update({
+                is_correct: evaluated.isCorrect,
+                marks_awarded: evaluated.marksAwarded,
+                time_spent_seconds: evaluated.timeSpentSeconds,
+                updated_at: submittedAt,
+              })
+              .eq('attempt_id', attemptId)
+              .eq('question_id', evaluated.questionId)
+          )
+        );
+
+        const { data, error } = await supabase
+          .from('attempts')
+          .update({
+            status: 'COMPLETED',
+            submitted_at: submittedAt,
+            total_time_seconds: evalResult.totalTimeSeconds,
+            score: evalResult.score,
+            accuracy: evalResult.accuracy,
+            physics_score: evalResult.physicsScore,
+            chemistry_score: evalResult.chemistryScore,
+            math_score: evalResult.mathScore,
+            correct_count: evalResult.correctCount,
+            wrong_count: evalResult.wrongCount,
+            unattempted_count: evalResult.unattemptedCount,
+            updated_at: submittedAt,
+          })
+          .eq('id', attemptId)
+          .select()
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            studentId: data.student_id,
+            testId: data.test_id,
+            attemptNumber: data.attempt_number,
+            status: data.status,
+            startedAt: data.started_at,
+            submittedAt: data.submitted_at,
+            durationMinutes: data.duration_minutes,
+            totalTimeSeconds: data.total_time_seconds,
+            score: Number(data.score),
+            accuracy: Number(data.accuracy),
+            physicsScore: Number(data.physics_score),
+            chemistryScore: Number(data.chemistry_score),
+            mathScore: Number(data.math_score),
+            correctCount: data.correct_count,
+            wrongCount: data.wrong_count,
+            unattemptedCount: data.unattempted_count,
+            isErrorCorrectTest: data.is_error_correct_test,
+            parentAttemptId: data.parent_attempt_id,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+          };
+        }
+      } catch (err) {
+        console.warn('Supabase submit attempt warning:', err);
+      }
+    }
+
+    return localUpdatedAttempt;
   },
 
   /**
@@ -439,36 +479,37 @@ export const storageAdapter = {
    */
   async getErrorNotes(attemptId: string): Promise<ErrorNote[]> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('error_notes')
-        .select('*')
-        .eq('attempt_id', attemptId);
+      try {
+        const { data, error } = await supabase
+          .from('error_notes')
+          .select('*')
+          .eq('attempt_id', attemptId);
 
-      if (error) {
-        console.error('Supabase fetch error notes error:', error);
-        throw error;
+        if (!error && data && data.length > 0) {
+          return data.map((row) => {
+            const types = Array.isArray(row.error_types) && row.error_types.length > 0
+              ? row.error_types
+              : (row.error_type ? [row.error_type] : ['CONCEPT_ERROR']);
+
+            return {
+              id: row.id,
+              studentId: row.student_id,
+              attemptId: row.attempt_id,
+              questionId: row.question_id,
+              errorTypes: types,
+              errorType: types[0],
+              studentExplanation: row.student_explanation || '',
+              correctConcept: row.correct_concept || '',
+              correctFormula: row.correct_formula || '',
+              preventionNote: row.prevention_note || '',
+              solutionInfo: row.solution_info || '',
+              updatedAt: row.updated_at,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Supabase getErrorNotes warning:', err);
       }
-
-      return (data || []).map((row) => {
-        const types = Array.isArray(row.error_types) && row.error_types.length > 0
-          ? row.error_types
-          : (row.error_type ? [row.error_type] : ['CONCEPT_ERROR']);
-
-        return {
-          id: row.id,
-          studentId: row.student_id,
-          attemptId: row.attempt_id,
-          questionId: row.question_id,
-          errorTypes: types,
-          errorType: types[0],
-          studentExplanation: row.student_explanation || '',
-          correctConcept: row.correct_concept || '',
-          correctFormula: row.correct_formula || '',
-          preventionNote: row.prevention_note || '',
-          solutionInfo: row.solution_info || '',
-          updatedAt: row.updated_at,
-        };
-      });
     }
 
     const all = getDemoErrorNotes();
@@ -493,32 +534,7 @@ export const storageAdapter = {
   async upsertErrorNote(note: ErrorNote): Promise<void> {
     const errorTypes = normalizeErrorTypes(note);
 
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('error_notes').upsert(
-        {
-          student_id: note.studentId,
-          attempt_id: note.attemptId,
-          question_id: note.questionId,
-          error_types: errorTypes,
-          error_type: errorTypes[0] || 'CONCEPT_ERROR',
-          student_explanation: note.studentExplanation,
-          correct_concept: note.correctConcept,
-          correct_formula: note.correctFormula,
-          prevention_note: note.preventionNote,
-          solution_info: note.solutionInfo,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'attempt_id,question_id' }
-      );
-
-      if (error) {
-        console.error('Supabase upsert error note error:', error);
-        throw error;
-      }
-      return;
-    }
-
-    // Dev/Demo fallback
+    // Update local cache first
     const all = getDemoErrorNotes();
     const idx = all.findIndex((n) => n.attemptId === note.attemptId && n.questionId === note.questionId);
     const updatedNote: ErrorNote = {
@@ -534,25 +550,49 @@ export const storageAdapter = {
       all.push(updatedNote);
     }
     saveDemoErrorNotes(all);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('error_notes').upsert(
+          {
+            student_id: note.studentId,
+            attempt_id: note.attemptId,
+            question_id: note.questionId,
+            error_types: errorTypes,
+            error_type: errorTypes[0] || 'CONCEPT_ERROR',
+            student_explanation: note.studentExplanation,
+            correct_concept: note.correctConcept,
+            correct_formula: note.correctFormula,
+            prevention_note: note.preventionNote,
+            solution_info: note.solutionInfo,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'attempt_id,question_id' }
+        );
+      } catch (err) {
+        console.warn('Supabase upsert error note warning:', err);
+      }
+    }
   },
 
   /**
    * Delete Error Note
    */
   async deleteErrorNote(attemptId: string, questionId: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from('error_notes')
-        .delete()
-        .eq('attempt_id', attemptId)
-        .eq('question_id', questionId);
-
-      if (error) throw error;
-      return;
-    }
-
     const all = getDemoErrorNotes();
     const filtered = all.filter((n) => !(n.attemptId === attemptId && n.questionId === questionId));
     saveDemoErrorNotes(filtered);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('error_notes')
+          .delete()
+          .eq('attempt_id', attemptId)
+          .eq('question_id', questionId);
+      } catch (err) {
+        console.warn('Supabase delete error note warning:', err);
+      }
+    }
   },
 };

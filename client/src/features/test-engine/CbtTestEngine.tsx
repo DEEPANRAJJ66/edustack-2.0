@@ -56,11 +56,13 @@ export const CbtTestEngine: React.FC = () => {
   // Track time spent per question
   const questionStartTimeRef = useRef<number>(Date.now());
 
+  const activeStudentId = student?.id || '00000000-0000-0000-0000-000000000001';
+
   // ----------------------------------------------------------------------------
   // 1. Initial Load & Recovery from Storage
   // ----------------------------------------------------------------------------
   useEffect(() => {
-    if (!test || !attemptId || !student) return;
+    if (!test || !attemptId) return;
 
     const initEngine = async () => {
       try {
@@ -68,7 +70,7 @@ export const CbtTestEngine: React.FC = () => {
         
         // If attempt doesn't exist yet, create one
         if (!att) {
-          att = await storageAdapter.createNextAttempt(student.id, test.id, test.durationMinutes);
+          att = await storageAdapter.createNextAttempt(activeStudentId, test.id, test.durationMinutes);
         }
 
         // If already completed, redirect to analysis

@@ -132,11 +132,14 @@ DECLARE
     v_started_at TIMESTAMPTZ := NOW();
 BEGIN
     -- Concurrency-safe lock strictly scoped to (student_id, test_id)
+    PERFORM 1 FROM attempts 
+    WHERE student_id = p_student_id AND test_id = p_test_id 
+    FOR UPDATE;
+
     SELECT COALESCE(MAX(a.attempt_number), 0) + 1
     INTO v_next_num
     FROM attempts a
-    WHERE a.student_id = p_student_id AND a.test_id = p_test_id
-    FOR UPDATE;
+    WHERE a.student_id = p_student_id AND a.test_id = p_test_id;
 
     INSERT INTO attempts (
         student_id,
