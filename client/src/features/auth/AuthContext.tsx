@@ -43,7 +43,7 @@ const getInitialStudent = (): StudentProfile => {
 /**
  * Environment-aware OAuth Redirect URL resolver:
  * - Production: strictly 'https://edustack-2-0.vercel.app' (or configured production domain)
- * - Local Development: 'http://localhost:5173' (or current development port)
+ * - Local Development: 'http://localhost:3000' (or current development port)
  * - Never returns localhost when running in production.
  */
 export const getAuthRedirectUrl = (): string => {
@@ -71,7 +71,7 @@ export const getAuthRedirectUrl = (): string => {
     return window.location.origin;
   }
 
-  return 'http://localhost:5173';
+  return 'http://localhost:3000';
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
