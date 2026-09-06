@@ -4,6 +4,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
+import { storageAdapter } from '../../services/storageAdapter';
 
 export interface StudentProfile {
   id: string;
@@ -14,6 +15,8 @@ export interface StudentProfile {
 
 interface AuthContextType {
   student: StudentProfile | null;
+  user: any | null;
+  isGoogleAuthenticated: boolean;
   isLoading: boolean;
   isSupabaseActive: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -22,7 +25,7 @@ interface AuthContextType {
   switchStudentProfile: (studentId: string, name: string, email: string) => void;
 }
 
-const DEFAULT_DEMO_STUDENT: StudentProfile = {
+export const DEFAULT_DEMO_STUDENT: StudentProfile = {
   id: '00000000-0000-0000-0000-000000000001',
   name: 'Arjun Sharma',
   email: 'arjun.sharma@edustack.app',
@@ -41,29 +44,43 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [student, setStudent] = useState<StudentProfile | null>(getInitialStudent());
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<any | null>(null);
+  const [isGoogleAuthenticated, setIsGoogleAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
-      // Check current session
+      // 1. Check existing session on load / refresh / browser reopen
       supabase.auth.getSession().then(({ data: { session }, error }) => {
         if (!error && session?.user) {
           mapSupabaseUserToStudent(session.user);
         } else {
+          setUser(null);
+          setIsGoogleAuthenticated(false);
           setStudent(getInitialStudent());
           setIsLoading(false);
         }
       }).catch((err) => {
         console.warn('Supabase getSession error, using local student profile:', err);
+        setUser(null);
+        setIsGoogleAuthenticated(false);
         setStudent(getInitialStudent());
         setIsLoading(false);
       });
 
-      // Listen for auth state changes
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // 2. Listen for OAuth state changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user) {
-          mapSupabaseUserToStudent(session.user);
+          await mapSupabaseUserToStudent(session.user);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setIsGoogleAuthenticated(false);
+          setStudent(DEFAULT_DEMO_STUDENT);
+          localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
+          setIsLoading(false);
         } else {
+          setUser(null);
+          setIsGoogleAuthenticated(false);
           setStudent(getInitialStudent());
           setIsLoading(false);
         }
@@ -73,25 +90,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         subscription.unsubscribe();
       };
     } else {
+      setUser(null);
+      setIsGoogleAuthenticated(false);
       setStudent(getInitialStudent());
       setIsLoading(false);
     }
   }, []);
 
-  const mapSupabaseUserToStudent = async (user: any) => {
+  const mapSupabaseUserToStudent = async (u: any) => {
+    setUser(u);
+    setIsGoogleAuthenticated(true);
+
     const profile: StudentProfile = {
-      id: user.id,
-      name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
-      email: user.email || '',
-      avatarUrl: user.user_metadata?.avatar_url || DEFAULT_DEMO_STUDENT.avatarUrl,
+      id: u.id,
+      name: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split('@')[0] || 'Student',
+      email: u.email || '',
+      avatarUrl: u.user_metadata?.avatar_url || u.user_metadata?.picture || DEFAULT_DEMO_STUDENT.avatarUrl,
     };
 
-    // Ensure profile row exists in profiles table
+    // Ensure profile row exists in PostgreSQL profiles table
     if (supabase) {
       try {
         await supabase.from('profiles').upsert(
           {
-            id: user.id,
+            id: u.id,
             name: profile.name,
             email: profile.email,
             avatar_url: profile.avatarUrl,
@@ -102,6 +124,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         console.warn('Supabase profile upsert warning:', err);
       }
+    }
+
+    // Preserve any existing attempts taken as guest in this session
+    try {
+      await storageAdapter.linkGuestAttemptsToStudent(
+        DEFAULT_DEMO_STUDENT.id,
+        u.id
+      );
+    } catch (err) {
+      console.warn('Guest attempt linking notice:', err);
     }
 
     setStudent(profile);
@@ -116,24 +148,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           provider: 'google',
           options: {
             redirectTo: window.location.origin,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
           },
         });
+
         if (error) {
-          console.warn('Google sign-in warning:', error.message);
-          alert('Google Sign-In note: ' + error.message + '\nContinuing with active student: ' + (student?.name || 'Arjun Sharma'));
+          console.error('Google sign-in error:', error);
+          alert('Google Sign-In Notice: ' + error.message + '\n\nPlease ensure Google Provider is enabled in Supabase Authentication -> Providers -> Google.');
         }
       } else {
-        const def = getInitialStudent();
-        setStudent(def);
-        localStorage.setItem('edustack_demo_active_student', JSON.stringify(def));
+        alert('Supabase is not configured. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
       }
     } catch (err: any) {
-      console.warn('Sign-in notice:', err);
-      alert('Sign-in note: Continuing with current student profile (' + (student?.name || 'Arjun Sharma') + ')');
+      console.error('Sign-in error:', err);
+      alert('Sign-In Error: ' + (err?.message || 'Failed to initiate Google sign in.'));
     }
   };
 
   const signOut = async () => {
+    setIsLoading(true);
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase.auth.signOut();
@@ -141,11 +177,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Sign out warning:', err);
       }
     }
+    setUser(null);
+    setIsGoogleAuthenticated(false);
     setStudent(DEFAULT_DEMO_STUDENT);
     localStorage.setItem('edustack_demo_active_student', JSON.stringify(DEFAULT_DEMO_STUDENT));
+    setIsLoading(false);
   };
 
   const switchStudentProfile = async (id: string, name: string, email: string) => {
+    setUser(null);
+    setIsGoogleAuthenticated(false);
+
     const updated = { id, name, email, avatarUrl: DEFAULT_DEMO_STUDENT.avatarUrl };
     setStudent(updated);
     localStorage.setItem('edustack_demo_active_student', JSON.stringify(updated));
@@ -172,6 +214,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         student,
+        user,
+        isGoogleAuthenticated,
         isLoading,
         isSupabaseActive: isSupabaseConfigured,
         signInWithGoogle,

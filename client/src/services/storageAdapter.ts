@@ -599,4 +599,89 @@ export const storageAdapter = {
       }
     }
   },
+
+  /**
+   * Link/reassign guest attempts to the newly authenticated Google student
+   * Ensures that any test taken as a guest in this browser session is preserved
+   * and permanently associated with the student's Google account in PostgreSQL.
+   */
+  async linkGuestAttemptsToStudent(
+    guestStudentId: string,
+    targetStudentId: string
+  ): Promise<void> {
+    if (!targetStudentId || targetStudentId === guestStudentId) return;
+
+    // 1. Update local cache
+    const allAttempts = getDemoAttempts();
+    let localChanged = false;
+    for (const att of allAttempts) {
+      if (att.studentId === guestStudentId) {
+        att.studentId = targetStudentId;
+        localChanged = true;
+      }
+    }
+    if (localChanged) {
+      saveDemoAttempts(allAttempts);
+    }
+
+    const allNotes = getDemoErrorNotes();
+    let notesChanged = false;
+    for (const note of allNotes) {
+      if (note.studentId === guestStudentId) {
+        note.studentId = targetStudentId;
+        notesChanged = true;
+      }
+    }
+    if (notesChanged) {
+      saveDemoErrorNotes(allNotes);
+    }
+
+    // 2. Sync to Supabase if connected
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: guestAtts } = await supabase
+          .from('attempts')
+          .select('id, test_id, attempt_number')
+          .eq('student_id', guestStudentId);
+
+        if (guestAtts && guestAtts.length > 0) {
+          const { data: targetAtts } = await supabase
+            .from('attempts')
+            .select('test_id, attempt_number')
+            .eq('student_id', targetStudentId);
+
+          const maxByTest: Record<string, number> = {};
+          if (targetAtts) {
+            for (const t of targetAtts) {
+              maxByTest[t.test_id] = Math.max(maxByTest[t.test_id] || 0, t.attempt_number);
+            }
+          }
+
+          for (const g of guestAtts) {
+            let newAttemptNum = g.attempt_number;
+            const currentMax = maxByTest[g.test_id] || 0;
+            if (newAttemptNum <= currentMax) {
+              newAttemptNum = currentMax + 1;
+              maxByTest[g.test_id] = newAttemptNum;
+            } else {
+              maxByTest[g.test_id] = Math.max(currentMax, newAttemptNum);
+            }
+
+            await supabase
+              .from('attempts')
+              .update({ student_id: targetStudentId, attempt_number: newAttemptNum })
+              .eq('id', g.id);
+
+            await supabase
+              .from('error_notes')
+              .update({ student_id: targetStudentId })
+              .eq('attempt_id', g.id);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not reassign guest attempts in Supabase:', err);
+      }
+    }
+  },
 };
+
